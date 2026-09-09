@@ -1,0 +1,1521 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Metal Kaplama Atölyesi - Simülasyon</title>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/Draggable.min.js"></script>
+
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      user-select: none;
+    }
+
+    body, html {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+      background-color: #0b0908;
+    }
+
+    #background-canvas {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+      background-image: url('watermarked_img_5177195439422187084.jpg');
+      background-size: cover;
+      background-position: center bottom;
+      background-repeat: no-repeat;
+      pointer-events: none;
+      z-index: 1;
+    }
+
+    .ambient-glow {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: radial-gradient(circle at 18% 46%, rgba(255, 190, 90, 0.16) 0%, transparent 55%),
+                  radial-gradient(circle at 82% 52%, rgba(255, 230, 180, 0.12) 0%, transparent 50%),
+                  linear-gradient(to top, rgba(0,0,0,0.6) 0%, transparent 45%);
+      pointer-events: none;
+      z-index: 2;
+    }
+
+    #interactive-layer {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+      z-index: 10;
+    }
+
+    /* Sol Masa Alanı */
+    .workpiece-zone {
+      position: absolute;
+      left: 3%;
+      bottom: 15%;
+      width: 370px;
+      height: 140px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      transform: rotateX(28deg) rotateZ(-2deg);
+      transform-origin: bottom center;
+    }
+
+    /* Sağ Masa Alanı */
+    .anode-zone {
+      position: absolute;
+      right: 2%;
+      bottom: 18%;
+      width: 440px;
+      height: 90px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      transform: rotateX(28deg) rotateZ(2deg);
+      transform-origin: bottom center;
+    }
+
+    .anode-slot {
+      position: relative;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .static-badge {
+      width: 32px;
+      height: 25px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 4px;
+      font-size: 13px;
+      font-weight: 900;
+      letter-spacing: 0.5px;
+      pointer-events: none;
+      box-shadow: 0 4px 8px rgba(0,0,0,0.6);
+      user-select: none;
+      flex-shrink: 0;
+      transition: opacity 0.35s ease;
+    }
+
+    .badge-ag { background: rgba(15, 23, 42, 0.85); border: 1px solid rgba(203, 213, 225, 0.45); color: #f8fafc; }
+    .badge-cu { background: rgba(30, 8, 2, 0.85); border: 1px solid rgba(230, 99, 51, 0.45); color: #ffcca8; }
+    .badge-ni { background: rgba(22, 26, 31, 0.85); border: 1px solid rgba(197, 204, 214, 0.45); color: #e2e8f0; }
+
+    /* Orta Kurulum Alanı (Temiz Zoom Bölgesi) */
+    .center-setup-zone {
+      position: absolute;
+      left: 50%;
+      bottom: 18%;
+      transform: translateX(-50%);
+      width: 450px;
+      height: 200px;
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+      pointer-events: none;
+      transform-origin: 30% 60%;
+      will-change: transform;
+    }
+
+    /* Cam Beher */
+    .beaker-unit {
+      position: relative;
+      width: 215px;
+      height: 165px;
+      pointer-events: auto;
+      will-change: transform;
+    }
+
+    .beaker-backplate { position: absolute; inset: 0; z-index: 5; pointer-events: none; }
+    .beaker-chamber   { position: absolute; inset: 0; z-index: 15; pointer-events: none; }
+    
+    .beaker-liquid-layer {
+      position: absolute;
+      inset: 0;
+      z-index: 25;
+      pointer-events: none;
+      overflow: hidden;
+    }
+
+    .beaker-frontglass {
+      position: absolute;
+      inset: 0;
+      z-index: 40;
+      pointer-events: none;
+      filter: drop-shadow(0 14px 22px rgba(0, 0, 0, 0.8));
+    }
+
+    /* Görsel Bağlantı Terminalleri */
+    .terminal-marker {
+      position: absolute;
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      border: 1.5px dashed rgba(74, 222, 128, 0.45);
+      background: rgba(74, 222, 128, 0.08);
+      z-index: 70;
+      pointer-events: none;
+      opacity: 0;
+      transform: translate(-50%, -50%);
+      transition: opacity 0.3s ease;
+    }
+
+    .terminal-marker.active-hint {
+      opacity: 1;
+      animation: pulseMarker 1.4s infinite alternate ease-in-out;
+    }
+
+    @keyframes pulseMarker {
+      0% { transform: translate(-50%, -50%) scale(0.9); opacity: 0.15; border-color: rgba(74, 222, 128, 0.3); }
+      100% { transform: translate(-50%, -50%) scale(1.15); opacity: 0.42; border-color: rgba(74, 222, 128, 0.65); box-shadow: 0 0 6px rgba(74, 222, 128, 0.25); }
+    }
+
+    .liquid-badge {
+      position: absolute;
+      bottom: 12px;
+      left: 50%;
+      transform: translateX(-50%) translateY(10px);
+      background: rgba(15, 23, 42, 0.88);
+      border: 1px solid rgba(148, 163, 184, 0.6);
+      color: #f8fafc;
+      padding: 3px 9px;
+      border-radius: 4px;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.8px;
+      box-shadow: 0 4px 10px rgba(0,0,0,0.6);
+      opacity: 0;
+      pointer-events: none;
+      z-index: 45;
+      white-space: nowrap;
+    }
+
+    #beaker-drop-target {
+      position: absolute;
+      top: 8px;
+      left: 8px;
+      width: 200px;
+      height: 150px;
+      border-radius: 10px;
+      border: 2px dashed transparent;
+      transition: all 0.3s ease;
+      pointer-events: none;
+      z-index: 30;
+    }
+
+    .beaker-unit.highlight-drop #beaker-drop-target {
+      border-color: rgba(212, 163, 115, 0.8);
+      background: rgba(212, 163, 115, 0.08);
+    }
+
+    /* Genişletilmiş Güç Kaynağı */
+    .power-supply-unit {
+      position: relative;
+      width: 200px;
+      height: 138px;
+      pointer-events: auto;
+      filter: drop-shadow(0 12px 18px rgba(0, 0, 0, 0.85));
+      margin-bottom: 2px;
+      z-index: 35;
+      will-change: transform;
+    }
+
+    /* SVG Kablo Hattı */
+    #wires-svg-layer {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+      pointer-events: none;
+      z-index: 85;
+    }
+
+    .wire-cable {
+      fill: none;
+      stroke-linecap: round;
+      filter: drop-shadow(0 6px 8px rgba(0,0,0,0.7));
+    }
+
+    /* Klipsler */
+    .clip-dom {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 26px;
+      height: 42px;
+      cursor: grab;
+      touch-action: none;
+      z-index: 100;
+      display: none;
+      filter: drop-shadow(0 6px 12px rgba(0,0,0,0.85));
+      will-change: transform;
+    }
+
+    .clip-dom:active {
+      cursor: grabbing;
+      filter: drop-shadow(0 10px 18px rgba(0,0,0,0.95));
+    }
+
+    .clip-dom svg {
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+    }
+
+    /* Sürüklenebilir Öğeler */
+    .item-wrapper {
+      position: relative;
+      cursor: grab;
+      touch-action: none;
+      filter: drop-shadow(0 6px 10px rgba(0, 0, 0, 0.8));
+      transition: filter 0.2s ease;
+      z-index: 50;
+    }
+
+    .item-wrapper:active {
+      cursor: grabbing;
+      filter: drop-shadow(0 14px 20px rgba(0, 0, 0, 0.95));
+      z-index: 80;
+    }
+
+    .render-mesh {
+      position: relative;
+      z-index: 2;
+      transform-origin: center center;
+      transition: transform 0.2s cubic-bezier(0.2, 0.8, 0.3, 1);
+    }
+
+    .item-label {
+      position: absolute;
+      bottom: -28px;
+      left: 50%;
+      transform: translateX(-50%);
+      font-size: 11px;
+      letter-spacing: 0.8px;
+      font-weight: 600;
+      color: #dfcaa7;
+      background: rgba(14, 11, 8, 0.94);
+      padding: 3px 10px;
+      border-radius: 4px;
+      border: 1px solid rgba(212, 163, 115, 0.35);
+      white-space: nowrap;
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 0.2s ease;
+      box-shadow: 0 4px 10px rgba(0,0,0,0.8);
+      z-index: 10;
+    }
+
+    .item-wrapper:hover .item-label { opacity: 1; }
+    .inside-beaker .item-label { display: none !important; opacity: 0 !important; }
+    .badge-hidden { opacity: 0 !important; pointer-events: none !important; }
+
+    .spoon-wrap { width: 145px; height: 46px; }
+    .key-wrap   { width: 115px; height: 46px; }
+    .ring-wrap  { width: 65px;  height: 50px; }
+    .plate-wrap { width: 105px; height: 60px; }
+
+    /* Yönerge Kutusu */
+    #instruction-box {
+      position: absolute;
+      top: 32px;
+      left: 50%;
+      transform: translateX(-50%) translateY(-25px);
+      width: 90%;
+      max-width: 720px;
+      padding: 16px 22px;
+      background: rgba(18, 14, 11, 0.94);
+      backdrop-filter: blur(12px);
+      border: 1px solid rgba(212, 163, 115, 0.4);
+      border-top: 2px solid #d4a373;
+      border-radius: 12px;
+      box-shadow: 0 20px 40px rgba(0, 0, 0, 0.8), 0 0 25px rgba(212, 163, 115, 0.12);
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      opacity: 0;
+      visibility: hidden;
+      z-index: 100;
+      transition: all 0.4s ease;
+    }
+
+    .instruction-icon-badge {
+      width: 44px;
+      height: 44px;
+      border-radius: 10px;
+      background: linear-gradient(135deg, rgba(212, 163, 115, 0.2), rgba(212, 163, 115, 0.05));
+      border: 1px solid rgba(212, 163, 115, 0.5);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+
+    .instruction-icon-badge svg { width: 24px; height: 24px; fill: #f3d5b5; }
+    .instruction-text-group { display: flex; flex-direction: column; gap: 4px; }
+    .instruction-title {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 1.5px;
+      color: #d4a373;
+    }
+
+    .instruction-content {
+      font-size: 14px;
+      line-height: 1.5;
+      color: #f1f5f9;
+    }
+
+    .instruction-content strong { color: #ffdfba; font-weight: 600; }
+
+    /* Bildirim Banner'ı */
+    #status-banner {
+      position: absolute;
+      top: 115px;
+      left: 50%;
+      transform: translateX(-50%) translateY(-15px);
+      padding: 14px 28px;
+      border-radius: 8px;
+      font-size: 15px;
+      font-weight: 700;
+      letter-spacing: 0.5px;
+      color: #ffffff;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      opacity: 0;
+      visibility: hidden;
+      z-index: 150;
+      box-shadow: 0 16px 32px rgba(0, 0, 0, 0.9);
+      transition: transform 0.3s ease, opacity 0.3s ease;
+    }
+
+    #status-banner.success {
+      background: #15803d;
+      border: 1.5px solid #4ade80;
+      box-shadow: 0 16px 32px rgba(0, 0, 0, 0.9), 0 0 25px rgba(74, 222, 128, 0.4);
+    }
+
+    #status-banner.danger {
+      background: #b91c1c;
+      border: 1.5px solid #f87171;
+      box-shadow: 0 16px 32px rgba(0, 0, 0, 0.9), 0 0 25px rgba(248, 113, 113, 0.45);
+    }
+
+    #warning-toast {
+      position: absolute;
+      top: 115px;
+      left: 50%;
+      transform: translateX(-50%) translateY(-15px);
+      padding: 12px 24px;
+      background: rgba(45, 10, 10, 0.95);
+      border: 1.5px solid #ef4444;
+      border-radius: 8px;
+      box-shadow: 0 14px 28px rgba(0, 0, 0, 0.9), 0 0 20px rgba(239, 68, 68, 0.35);
+      color: #fee2e2;
+      font-size: 14px;
+      font-weight: 600;
+      letter-spacing: 0.5px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      opacity: 0;
+      visibility: hidden;
+      z-index: 150;
+      pointer-events: none;
+    }
+
+    #warning-toast svg { width: 20px; height: 20px; fill: #ef4444; flex-shrink: 0; }
+
+    .highlight-target {
+      animation: pulseTarget 2s infinite alternate ease-in-out;
+    }
+
+    @keyframes pulseTarget {
+      0% { filter: drop-shadow(0 0 4px rgba(212, 163, 115, 0.2)); }
+      100% { filter: drop-shadow(0 0 16px rgba(212, 163, 115, 0.9)); }
+    }
+  </style>
+</head>
+<body>
+
+  <div id="background-canvas"></div>
+  <div class="ambient-glow"></div>
+
+  <!-- SVG Tanımları -->
+  <svg style="position: absolute; width: 0; height: 0;" aria-hidden="true">
+    <defs>
+      <linearGradient id="ironBase" x1="0%" y1="0%" x2="0%" y2="100%">
+        <stop id="ironStop1" offset="0%" stop-color="#7a7e85"/>
+        <stop id="ironStop2" offset="25%" stop-color="#4e5258"/>
+        <stop id="ironStop3" offset="60%" stop-color="#2a2c30"/>
+        <stop id="ironStop4" offset="100%" stop-color="#141517"/>
+      </linearGradient>
+
+      <linearGradient id="ironEdgeLight" x1="0%" y1="0%" x2="100%" y2="0%">
+        <stop offset="0%" stop-color="#ffffff" stop-opacity="0.9"/>
+        <stop offset="35%" stop-color="#c8d0db" stop-opacity="0.7"/>
+        <stop offset="70%" stop-color="#7e858f" stop-opacity="0.3"/>
+        <stop offset="100%" stop-color="#ffffff" stop-opacity="0.6"/>
+      </linearGradient>
+
+      <radialGradient id="spoonBowlShade" cx="45%" cy="45%" r="55%">
+        <stop id="bowlStop1" offset="0%" stop-color="#25282c"/>
+        <stop id="bowlStop2" offset="60%" stop-color="#3d4147"/>
+        <stop id="bowlStop3" offset="90%" stop-color="#555a63"/>
+        <stop id="bowlStop4" offset="100%" stop-color="#222428"/>
+      </radialGradient>
+
+      <linearGradient id="simpleCopperRing" x1="0%" y1="0%" x2="0%" y2="100%">
+        <stop offset="0%" stop-color="#d96a3b"/>
+        <stop offset="50%" stop-color="#ad461d"/>
+        <stop offset="100%" stop-color="#591c06"/>
+      </linearGradient>
+
+      <linearGradient id="silverTopThin" x1="0%" y1="0%" x2="100%" y2="100%">
+        <stop offset="0%" stop-color="#ffffff"/>
+        <stop offset="20%" stop-color="#f8fafc"/>
+        <stop offset="42%" stop-color="#cbd5e1"/>
+        <stop offset="55%" stop-color="#ffffff"/>
+        <stop offset="75%" stop-color="#94a3b8"/>
+        <stop offset="100%" stop-color="#64748b"/>
+      </linearGradient>
+      <linearGradient id="silverFrontThin" x1="0%" y1="0%" x2="0%" y2="100%">
+        <stop offset="0%" stop-color="#94a3b8"/>
+        <stop offset="100%" stop-color="#475569"/>
+      </linearGradient>
+
+      <linearGradient id="copperTopThin" x1="0%" y1="0%" x2="100%" y2="100%">
+        <stop offset="0%" stop-color="#ffbca3"/>
+        <stop offset="25%" stop-color="#e66333"/>
+        <stop offset="50%" stop-color="#ba4216"/>
+        <stop offset="65%" stop-color="#f28257"/>
+        <stop offset="85%" stop-color="#8c2a07"/>
+        <stop offset="100%" stop-color="#4a1503"/>
+      </linearGradient>
+      <linearGradient id="copperFrontThin" x1="0%" y1="0%" x2="0%" y2="100%">
+        <stop offset="0%" stop-color="#8c2a07"/>
+        <stop offset="100%" stop-color="#3b0f02"/>
+      </linearGradient>
+
+      <linearGradient id="nickelTopThin" x1="0%" y1="0%" x2="100%" y2="100%">
+        <stop offset="0%" stop-color="#edf1f5"/>
+        <stop offset="25%" stop-color="#c5ccd6"/>
+        <stop offset="50%" stop-color="#9aa2ad"/>
+        <stop offset="65%" stop-color="#dce3eb"/>
+        <stop offset="85%" stop-color="#78808c"/>
+        <stop offset="100%" stop-color="#515761"/>
+      </linearGradient>
+      <linearGradient id="nickelFrontThin" x1="0%" y1="0%" x2="0%" y2="100%">
+        <stop offset="0%" stop-color="#78808c"/>
+        <stop offset="100%" stop-color="#363b42"/>
+      </linearGradient>
+
+      <linearGradient id="minimalPsuFront" x1="0%" y1="0%" x2="0%" y2="100%">
+        <stop offset="0%" stop-color="#242830"/>
+        <stop offset="15%" stop-color="#191c22"/>
+        <stop offset="100%" stop-color="#0f1115"/>
+      </linearGradient>
+
+      <linearGradient id="minimalPsuTop" x1="0%" y1="0%" x2="100%" y2="0%">
+        <stop offset="0%" stop-color="#3b424d"/>
+        <stop offset="50%" stop-color="#515a69"/>
+        <stop offset="100%" stop-color="#30353f"/>
+      </linearGradient>
+
+      <linearGradient id="glassWallLeft" x1="0%" y1="0%" x2="100%" y2="0%">
+        <stop offset="0%" stop-color="#ffffff" stop-opacity="0.45"/>
+        <stop offset="40%" stop-color="#a5d8ff" stop-opacity="0.18"/>
+        <stop offset="100%" stop-color="#ffffff" stop-opacity="0.6"/>
+      </linearGradient>
+
+      <linearGradient id="glassWallRight" x1="100%" y1="0%" x2="0%" y2="0%">
+        <stop offset="0%" stop-color="#ffffff" stop-opacity="0.5"/>
+        <stop offset="50%" stop-color="#a5d8ff" stop-opacity="0.15"/>
+        <stop offset="100%" stop-color="#ffffff" stop-opacity="0"/>
+      </linearGradient>
+
+      <linearGradient id="glassBottomEdge" x1="0%" y1="0%" x2="0%" y2="100%">
+        <stop offset="0%" stop-color="#ffffff" stop-opacity="0.1"/>
+        <stop offset="70%" stop-color="#cbe5ff" stop-opacity="0.35"/>
+        <stop offset="100%" stop-color="#0b2438" stop-opacity="0.6"/>
+      </linearGradient>
+
+      <linearGradient id="clearAgLiquid" x1="0%" y1="0%" x2="0%" y2="100%">
+        <stop offset="0%" stop-color="#ffffff" stop-opacity="0.25"/>
+        <stop offset="40%" stop-color="#dbeafe" stop-opacity="0.12"/>
+        <stop offset="85%" stop-color="#bfdbfe" stop-opacity="0.18"/>
+        <stop offset="100%" stop-color="#93c5fd" stop-opacity="0.28"/>
+      </linearGradient>
+
+      <filter id="corrosionFilter">
+        <feTurbulence id="turbNode" type="fractalNoise" baseFrequency="0.0" numOctaves="3" result="noise"/>
+        <feDisplacementMap id="dispNode" in="SourceGraphic" in2="noise" scale="0" xChannelSelector="R" yChannelSelector="G"/>
+      </filter>
+    </defs>
+  </svg>
+
+  <!-- KABLOLAR (SVG) -->
+  <svg id="wires-svg-layer">
+    <path id="wire-red" class="wire-cable" stroke="#dc2626" stroke-width="4.2" d="M 0 0"/>
+    <path id="wire-black" class="wire-cable" stroke="#1f2937" stroke-width="4.2" d="M 0 0"/>
+  </svg>
+
+  <!-- KLİPSLER -->
+  <div id="clip-red" class="clip-dom">
+    <svg viewBox="0 0 26 42">
+      <rect x="5" y="0" width="16" height="24" rx="3" fill="#b91c1c" stroke="#f87171" stroke-width="1.4"/>
+      <polygon points="6,24 20,24 13,40" fill="#e2e8f0" stroke="#94a3b8" stroke-width="1"/>
+      <line x1="13" y1="2" x2="13" y2="22" stroke="#ef4444" stroke-width="2"/>
+    </svg>
+  </div>
+
+  <div id="clip-black" class="clip-dom">
+    <svg viewBox="0 0 26 42">
+      <rect x="5" y="0" width="16" height="24" rx="3" fill="#111827" stroke="#4b5563" stroke-width="1.4"/>
+      <polygon points="6,24 20,24 13,40" fill="#94a3b8" stroke="#475569" stroke-width="1"/>
+      <line x1="13" y1="2" x2="13" y2="22" stroke="#374151" stroke-width="2"/>
+    </svg>
+  </div>
+
+  <div id="interactive-layer">
+
+    <div id="warning-toast">
+      <svg viewBox="0 0 24 24"><path d="M1 21h22L12 2 1 21zm12-3h-2v-2h2v2zm0-4h-2v-4h2v4z"/></svg>
+      <span id="warning-message">Müşteri gümüş kaplama istiyor!</span>
+    </div>
+
+    <div id="status-banner">
+      <span id="status-banner-text">Harika. Sistem hazır!</span>
+    </div>
+
+    <!-- YÖNERGE KUTUSU -->
+    <div id="instruction-box">
+      <div class="instruction-icon-badge" id="instruction-badge">
+        <svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg>
+      </div>
+      <div class="instruction-text-group">
+        <span class="instruction-title" id="instruction-title">GÖREV TALİMATI</span>
+        <p class="instruction-content" id="instruction-text">
+          Merhaba usta! Bugün eski bir demir kaşığı parlatıp <strong>Gümüş</strong> ile kaplamamız gerekiyor. Lütfen tezgaha <strong>Demir Kaşığı</strong> ve <strong>Gümüş Levhayı</strong> yerleştir.
+        </p>
+      </div>
+    </div>
+    
+    <!-- SOL MASA: KAPLANACAK NESNELER -->
+    <div class="workpiece-zone">
+      <div id="item-spoon" class="item-wrapper spoon-wrap" data-role="cathode" data-type="spoon" data-correct="true">
+        <div class="render-mesh" id="spoon-mesh">
+          <svg viewBox="0 0 170 50" width="100%" height="100%" id="spoon-svg">
+            <path id="spoon-handle" d="M 46 23 C 78 20, 120 18, 162 21 C 166 21, 167 27, 163 28 C 122 28, 76 27, 46 26 Z" fill="url(#ironBase)"/>
+            <path id="spoon-edge" d="M 48 23 C 82 21, 122 19, 161 22" stroke="url(#ironEdgeLight)" stroke-width="1.2" stroke-linecap="round" fill="none"/>
+            <ellipse id="spoon-rim" cx="26" cy="25" rx="24" ry="17" fill="url(#ironBase)"/>
+            <ellipse id="spoon-bowl" cx="25" cy="25" rx="21" ry="14" fill="url(#spoonBowlShade)"/>
+            <path id="spoon-highlight" d="M 8 20 C 13 13, 29 11, 41 15 C 46 17, 48 20, 48 23" stroke="#ffffff" stroke-width="1.2" stroke-linecap="round" fill="none" opacity="0.75"/>
+          </svg>
+        </div>
+        <span class="item-label">Döküm Demir Kaşık</span>
+      </div>
+
+      <div id="item-key" class="item-wrapper key-wrap" data-role="cathode" data-type="key" data-correct="false" data-warn="Müşteri demir kaşığın kaplanmasını istedi!">
+        <div class="render-mesh">
+          <svg viewBox="0 0 130 50" width="100%" height="100%">
+            <circle cx="24" cy="25" r="18" fill="url(#ironBase)"/>
+            <circle cx="24" cy="25" r="9" fill="#131416"/>
+            <circle cx="24" cy="25" r="17.2" fill="none" stroke="url(#ironEdgeLight)" stroke-width="1.3" opacity="0.8"/>
+            <path d="M 41 22 L 122 22 C 124 22, 125 27, 123 28 L 41 28 Z" fill="url(#ironBase)"/>
+            <path d="M 100 28 L 100 40 L 108 40 L 108 34 L 114 34 L 114 41 L 122 41 L 122 28 Z" fill="url(#ironBase)"/>
+          </svg>
+        </div>
+        <span class="item-label">Eski Demir Anahtar</span>
+      </div>
+
+      <div id="item-ring" class="item-wrapper ring-wrap" data-role="cathode" data-type="ring" data-correct="false" data-warn="Müşteri demir kaşığın kaplanmasını istedi!">
+        <div class="render-mesh">
+          <svg viewBox="0 0 70 55" width="100%" height="100%">
+            <ellipse cx="35" cy="35" rx="23" ry="7" fill="#000000" opacity="0.16"/>
+            <ellipse cx="35" cy="27" rx="23" ry="13" fill="none" stroke="url(#simpleCopperRing)" stroke-width="7.5"/>
+            <path d="M 17 25 C 20 18, 30 15, 38 15 C 47 15, 52 18, 54 22" fill="none" stroke="#f0956e" stroke-width="1.8" opacity="0.85"/>
+          </svg>
+        </div>
+        <span class="item-label">Bakır Yüzük</span>
+      </div>
+    </div>
+
+    <!-- ORTA MASA: BEHER VE GENİŞLETİLMİŞ GÜÇ KAYNAĞI -->
+    <div class="center-setup-zone" id="center-setup-zone">
+
+      <!-- CAM BEHER BİRİMİ -->
+      <div class="beaker-unit" id="beaker">
+        <div id="beaker-drop-target"></div>
+
+        <div class="beaker-backplate">
+          <svg viewBox="0 0 260 200" width="100%" height="100%">
+            <ellipse cx="130" cy="186" rx="105" ry="10" fill="#000000" opacity="0.65"/>
+            <ellipse cx="130" cy="28" rx="98" ry="12" fill="rgba(165, 216, 255, 0.05)"/>
+            <path d="M 32 30 L 32 170 C 32 184, 228 184, 228 170 L 228 30" fill="rgba(190, 227, 255, 0.03)" />
+            <path d="M 32 168 C 32 182, 228 182, 228 168 Z" fill="url(#glassBottomEdge)"/>
+          </svg>
+        </div>
+
+        <div class="beaker-chamber" id="beaker-chamber"></div>
+
+        <!-- SIVI KATMANI -->
+        <div class="beaker-liquid-layer">
+          <svg id="liquid-svg" viewBox="0 0 260 200" width="100%" height="100%">
+            <g id="liquid-body" transform="translate(0, 160)">
+              <path d="M 34 0 L 34 140 C 34 154, 226 154, 226 140 L 226 0 Z" fill="url(#clearAgLiquid)"/>
+              <ellipse cx="130" cy="0" rx="96" ry="10" fill="rgba(255, 255, 255, 0.4)" stroke="rgba(255, 255, 255, 0.7)" stroke-width="1.5"/>
+            </g>
+          </svg>
+        </div>
+
+        <!-- MİKROSKOBİK İYON & ELEKTRON HAREKET ALANI (SVG) -->
+        <svg id="micro-layer" viewBox="0 0 260 200" style="position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 30; overflow: visible;"></svg>
+
+        <div class="liquid-badge" id="liquid-badge">AgNO₃ (Gümüş Nitrat)</div>
+
+        <div class="beaker-frontglass">
+          <svg viewBox="0 0 260 200" width="100%" height="100%">
+            <path d="M 32 28 C 32 16, 228 16, 228 28" fill="none" stroke="rgba(255, 255, 255, 0.35)" stroke-width="2.2" stroke-linecap="round"/>
+            <ellipse cx="130" cy="170" rx="98" ry="9" fill="none" stroke="rgba(255,255,255,0.35)" stroke-width="1.6"/>
+            <path d="M 32 30 L 32 170 C 32 184, 228 184, 228 170 L 228 30" fill="none" stroke="rgba(255, 255, 255, 0.45)" stroke-width="2.2"/>
+            <path d="M 35 32 L 38 167 C 38 173, 70 178, 92 178 L 92 32 Z" fill="url(#glassWallLeft)"/>
+            <line x1="40" y1="36" x2="41" y2="164" stroke="#ffffff" stroke-width="2" stroke-linecap="round" opacity="0.75"/>
+            <path d="M 225 32 L 222 167 C 222 173, 190 178, 168 178 L 168 32 Z" fill="url(#glassWallRight)"/>
+            <line x1="220" y1="36" x2="219" y2="164" stroke="#ffffff" stroke-width="1.4" opacity="0.55"/>
+            <path d="M 33 30 C 22 27, 16 22, 19 19 C 24 17, 31 21, 42 25" fill="none" stroke="#ffffff" stroke-width="2.6"/>
+            <path d="M 42 25 C 65 34, 195 34, 232 26" fill="none" stroke="#ffffff" stroke-width="2.8" opacity="0.95"/>
+          </svg>
+        </div>
+
+        <!-- HEDEF YEŞİL HALKALAR -->
+        <div id="target-spoon-hint" class="terminal-marker"></div>
+        <div id="target-silver-hint" class="terminal-marker"></div>
+
+      </div>
+
+      <!-- GENİŞLETİLMİŞ DC GÜÇ KAYNAĞI -->
+      <div class="power-supply-unit" id="power-supply">
+        <svg viewBox="0 0 250 185" width="100%" height="100%">
+          <ellipse cx="125" cy="178" rx="115" ry="8" fill="#000000" opacity="0.6"/>
+          <polygon points="12,18 238,18 224,32 26,32" fill="url(#minimalPsuTop)"/>
+          <rect x="26" y="32" width="198" height="142" rx="4" fill="url(#minimalPsuFront)" stroke="#374151" stroke-width="1.2"/>
+
+          <!-- Değer Yazan Ekran -->
+          <rect x="42" y="44" width="166" height="42" rx="4" fill="#030712" stroke="#1f2937" stroke-width="1.4"/>
+          <rect x="46" y="48" width="158" height="34" rx="2" fill="#0c0404"/>
+          <text id="voltage-display" x="125" y="73" font-family="'Courier New', monospace" font-size="22" font-weight="900" fill="#ef4444" text-anchor="middle" letter-spacing="1">0.0 V</text>
+
+          <!-- Düğmeler -->
+          <g transform="translate(80, 105)">
+            <circle cx="0" cy="0" r="10.5" fill="#1f242d" stroke="#475161" stroke-width="1"/>
+            <circle cx="0" cy="0" r="7.5" fill="#111419"/>
+            <line x1="0" y1="-7.5" x2="0" y2="-3" stroke="#9ca3af" stroke-width="1.5"/>
+          </g>
+
+          <g transform="translate(170, 105)">
+            <circle cx="0" cy="0" r="10.5" fill="#1f242d" stroke="#475161" stroke-width="1"/>
+            <circle cx="0" cy="0" r="7.5" fill="#111419"/>
+            <line x1="0" y1="-7.5" x2="0" y2="-3" stroke="#9ca3af" stroke-width="1.5"/>
+          </g>
+
+          <!-- Güç Anahtarı -->
+          <rect x="42" y="142" width="20" height="14" rx="2" fill="#7f1d1d" stroke="#ef4444" stroke-width="0.9"/>
+          <line x1="52" y1="145" x2="52" y2="153" stroke="#ffffff" stroke-width="1.2"/>
+
+          <!-- JAK ETİKETLERİ -->
+          <text x="135" y="136" font-family="'Segoe UI', system-ui, sans-serif" font-size="10" font-weight="800" fill="#f87171" text-anchor="middle" letter-spacing="0.4">Anot(+)</text>
+          <text x="190" y="136" font-family="'Segoe UI', system-ui, sans-serif" font-size="10" font-weight="800" fill="#cbd5e1" text-anchor="middle" letter-spacing="0.4">Katot(-)</text>
+
+          <!-- Çıkış Jakları -->
+          <circle id="jack-red" cx="135" cy="151" r="8" fill="#dc2626" stroke="#991b1b" stroke-width="1.2"/>
+          <circle cx="135" cy="151" r="3.2" fill="#1c0303"/>
+
+          <circle id="jack-black" cx="190" cy="151" r="8" fill="#1f2937" stroke="#111827" stroke-width="1.2"/>
+          <circle cx="190" cy="151" r="3.2" fill="#000000"/>
+        </svg>
+      </div>
+
+    </div>
+
+    <!-- SAĞ MASA: KAPLAMA LEVHALARI -->
+    <div class="anode-zone">
+      <div class="anode-slot">
+        <div id="item-silver" class="item-wrapper plate-wrap" data-role="anode" data-type="plate" data-correct="true">
+          <div class="render-mesh" id="silver-mesh">
+            <svg viewBox="0 0 110 65" width="100%" height="100%" id="silver-svg">
+              <polygon points="8,50 94,50 106,57 16,57" fill="#000000" opacity="0.4"/>
+              <polygon points="10,44 96,44 96,48 10,48" fill="url(#silverFrontThin)"/>
+              <polygon points="96,44 106,22 106,26 96,48" fill="#475569"/>
+              <polygon id="silver-face" points="20,22 106,22 96,44 10,44" fill="url(#silverTopThin)"/>
+              <line x1="10" y1="44" x2="96" y2="44" stroke="#ffffff" stroke-width="1.5" opacity="0.95"/>
+            </svg>
+          </div>
+          <span class="item-label">Gümüş Levha (Ag)</span>
+        </div>
+        <div class="static-badge badge-ag" id="badge-silver">Ag</div>
+      </div>
+
+      <div class="anode-slot">
+        <div id="item-copper" class="item-wrapper plate-wrap" data-role="anode" data-type="plate" data-correct="false" data-warn="Müşteri gümüş kaplama istiyor!">
+          <div class="render-mesh">
+            <svg viewBox="0 0 110 65" width="100%" height="100%">
+              <polygon points="8,50 94,50 106,57 16,57" fill="#000000" opacity="0.4"/>
+              <polygon points="10,44 96,44 96,48 10,48" fill="url(#copperFrontThin)"/>
+              <polygon points="20,22 106,22 96,44 10,44" fill="url(#copperTopThin)"/>
+            </svg>
+          </div>
+          <span class="item-label">Bakır Levha (Cu)</span>
+        </div>
+        <div class="static-badge badge-cu" id="badge-copper">Cu</div>
+      </div>
+
+      <div class="anode-slot">
+        <div id="item-nickel" class="item-wrapper plate-wrap" data-role="anode" data-type="plate" data-correct="false" data-warn="Müşteri gümüş kaplama istiyor!">
+          <div class="render-mesh">
+            <svg viewBox="0 0 110 65" width="100%" height="100%">
+              <polygon points="8,50 94,50 106,57 16,57" fill="#000000" opacity="0.4"/>
+              <polygon points="10,44 96,44 96,48 10,48" fill="url(#nickelFrontThin)"/>
+              <polygon points="20,22 106,22 96,44 10,44" fill="url(#nickelTopThin)"/>
+            </svg>
+          </div>
+          <span class="item-label">Nikel Levha (Ni)</span>
+        </div>
+        <div class="static-badge badge-ni" id="badge-nickel">Ni</div>
+      </div>
+    </div>
+
+  </div>
+
+  <script>
+    gsap.registerPlugin(Draggable);
+
+    let state = {
+      isInteractionReady: false,
+      step: 1,
+      placedCathode: null,
+      placedAnode: null,
+      clipConnections: {
+        red: null,
+        black: null
+      },
+      reactionActive: false
+    };
+
+    const beakerEl = document.getElementById("beaker");
+    const beakerChamber = document.getElementById("beaker-chamber");
+    const targetSpoonHint = document.getElementById("target-spoon-hint");
+    const targetSilverHint = document.getElementById("target-silver-hint");
+    const warningToast = document.getElementById("warning-toast");
+    const warningMsg = document.getElementById("warning-message");
+    const statusBanner = document.getElementById("status-banner");
+    const statusBannerText = document.getElementById("status-banner-text");
+    const voltageDisplay = document.getElementById("voltage-display");
+
+    const wireState = {
+      red:   { startX: 0, startY: 0, homeX: 0, homeY: 0 },
+      black: { startX: 0, startY: 0, homeX: 0, homeY: 0 }
+    };
+
+    function showWarning(message) {
+      warningMsg.textContent = message;
+      gsap.killTweensOf(warningToast);
+      gsap.timeline()
+        .to(warningToast, { autoAlpha: 1, y: 0, duration: 0.25, ease: "power2.out" })
+        .to(warningToast, { autoAlpha: 0, y: -15, duration: 0.35, ease: "power2.in", delay: 2.2 });
+    }
+
+    function showStatusBanner(type, message) {
+      statusBannerText.textContent = message;
+      statusBanner.className = "";
+      statusBanner.classList.add(type);
+
+      gsap.killTweensOf(statusBanner);
+      gsap.timeline()
+        .to(statusBanner, { autoAlpha: 1, y: 0, duration: 0.35, ease: "back.out(1.4)" })
+        .to(statusBanner, { autoAlpha: 0, y: -15, duration: 0.4, ease: "power2.in", delay: 3.5 });
+    }
+
+    // Draggable (Malzemeler)
+    Draggable.create(".item-wrapper", {
+      type: "x,y",
+      edgeResistance: 0.85,
+      bounds: "#interactive-layer",
+      cursor: "grab",
+      activeCursor: "grabbing",
+
+      onPress: function() {
+        if (!state.isInteractionReady || state.step !== 1) return;
+        const mesh = this.target.querySelector(".render-mesh");
+        gsap.to(mesh, { y: -10, scale: 1.05, duration: 0.18 });
+      },
+
+      onDrag: function() {
+        if (!state.isInteractionReady || state.step !== 1) return;
+        if (this.hitTest(beakerEl, "28%")) {
+          beakerEl.classList.add("highlight-drop");
+        } else {
+          beakerEl.classList.remove("highlight-drop");
+        }
+      },
+
+      onRelease: function() {
+        beakerEl.classList.remove("highlight-drop");
+        const mesh = this.target.querySelector(".render-mesh");
+        gsap.to(mesh, { y: 0, scale: 1.0, duration: 0.2 });
+
+        if (!state.isInteractionReady || state.step !== 1) {
+          gsap.to(this.target, { x: 0, y: 0, duration: 0.4, ease: "power2.out" });
+          return;
+        }
+
+        const isDroppedInBeaker = this.hitTest(beakerEl, "30%");
+
+        if (isDroppedInBeaker) {
+          const isCorrect = this.target.getAttribute("data-correct") === "true";
+          const role = this.target.getAttribute("data-role");
+          const type = this.target.getAttribute("data-type");
+
+          if (!isCorrect) {
+            const customWarn = this.target.getAttribute("data-warn") || "Müşteri gümüş kaplama istiyor!";
+            showWarning(customWarn);
+            gsap.to(this.target, { x: 0, y: 0, duration: 0.6, ease: "back.out(1.2)" });
+            return;
+          }
+
+          handleCorrectDrop(this.target, role, type, this);
+        } else {
+          gsap.to(this.target, { x: 0, y: 0, duration: 0.4, ease: "power2.out" });
+        }
+      }
+    });
+
+    function handleCorrectDrop(item, role, type, draggableInstance) {
+      draggableInstance.disable();
+      item.classList.remove("highlight-target");
+      item.classList.add("inside-beaker");
+
+      const slot = item.closest(".anode-slot");
+      if (slot) {
+        const badge = slot.querySelector(".static-badge");
+        if (badge) badge.classList.add("badge-hidden");
+      }
+
+      const beakerRect = beakerEl.getBoundingClientRect();
+      const itemRect = item.getBoundingClientRect();
+
+      let targetX, targetY, targetRotate;
+
+      if (role === "cathode") {
+        state.placedCathode = item;
+        if (type === "spoon") {
+          const targetGlobalX = beakerRect.left - 4;
+          const targetGlobalY = beakerRect.top + 32;
+          targetX = draggableInstance.x + (targetGlobalX - itemRect.left);
+          targetY = draggableInstance.y + (targetGlobalY - itemRect.top);
+          targetRotate = 90;
+        }
+      } else if (role === "anode") {
+        state.placedAnode = item;
+        const targetGlobalX = beakerRect.left + 95;
+        const targetGlobalY = beakerRect.top + 28;
+        targetX = draggableInstance.x + (targetGlobalX - itemRect.left);
+        targetY = draggableInstance.y + (targetGlobalY - itemRect.top);
+        targetRotate = 90;
+      }
+
+      gsap.to(item, {
+        x: targetX,
+        y: targetY,
+        duration: 0.55,
+        ease: "power2.out",
+        onComplete: () => {
+          const finalItemRect = item.getBoundingClientRect();
+          const localLeft = finalItemRect.left - beakerRect.left;
+          const localTop = finalItemRect.top - beakerRect.top;
+
+          beakerChamber.appendChild(item);
+          gsap.set(item, {
+            position: "absolute",
+            left: localLeft,
+            top: localTop,
+            x: 0,
+            y: 0,
+            zIndex: 15
+          });
+        }
+      });
+
+      gsap.to(item.querySelector(".render-mesh"), {
+        rotation: targetRotate,
+        duration: 0.55,
+        ease: "power2.out"
+      });
+
+      checkStepCompletion();
+    }
+
+    function checkStepCompletion() {
+      if (state.placedCathode && state.placedAnode && state.step === 1) {
+        state.step = 2;
+        triggerElectrolyteAndWiresStep();
+      }
+    }
+
+    function triggerElectrolyteAndWiresStep() {
+      const box = document.getElementById("instruction-box");
+      const title = document.getElementById("instruction-title");
+      const text = document.getElementById("instruction-text");
+
+      gsap.to(box, { autoAlpha: 0, y: -20, duration: 0.35 });
+
+      gsap.timeline()
+        .to("#liquid-body", {
+          y: 65,
+          duration: 1.5,
+          ease: "power1.inOut",
+          delay: 0.4
+        })
+        .to("#liquid-badge", {
+          opacity: 1,
+          y: 0,
+          duration: 0.4,
+          ease: "back.out(1.5)"
+        }, "-=0.2")
+        .call(() => {
+          initWiresAndClips();
+        })
+        .call(() => {
+          title.textContent = "ELEKTROLİZ VE KABLO BAĞLANTISI";
+          title.style.color = "#f59e0b";
+          text.innerHTML = "<strong>Elektroliz kuralı:</strong> Kaplanacak eşya her zaman <strong>Katota (-)</strong>, kaplama yapacak metal <strong>Anota (+)</strong> bağlanmalıdır. Kabloları doğru uçlara bağla!";
+
+          gsap.to(box, {
+            autoAlpha: 1,
+            y: 0,
+            duration: 0.6,
+            borderColor: "rgba(245, 158, 11, 0.6)",
+            boxShadow: "0 20px 40px rgba(0, 0, 0, 0.8), 0 0 25px rgba(245, 158, 11, 0.2)",
+            ease: "back.out(1.4)"
+          });
+        }, null, "+=0.3");
+    }
+
+    function initWiresAndClips() {
+      const psu = document.getElementById("power-supply");
+      const psuRect = psu.getBoundingClientRect();
+
+      wireState.red.startX = psuRect.left + (psuRect.width * (135 / 250));
+      wireState.red.startY = psuRect.top + (psuRect.height * (151 / 185));
+
+      wireState.black.startX = psuRect.left + (psuRect.width * (190 / 250));
+      wireState.black.startY = psuRect.top + (psuRect.height * (151 / 185));
+
+      wireState.red.homeX = wireState.red.startX - 95;
+      wireState.red.homeY = wireState.red.startY + 65;
+
+      wireState.black.homeX = wireState.black.startX - 40;
+      wireState.black.homeY = wireState.black.startY + 80;
+
+      const clipRed = document.getElementById("clip-red");
+      const clipBlack = document.getElementById("clip-black");
+
+      clipRed.style.display = "block";
+      clipBlack.style.display = "block";
+
+      gsap.set(clipRed, { x: wireState.red.homeX, y: wireState.red.homeY });
+      gsap.set(clipBlack, { x: wireState.black.homeX, y: wireState.black.homeY });
+
+      gsap.set(targetSpoonHint, { left: 68, top: 8 });
+      gsap.set(targetSilverHint, { left: 146, top: 36 });
+
+      gsap.from([clipRed, clipBlack, "#wire-red", "#wire-black"], {
+        opacity: 0,
+        scale: 0.8,
+        duration: 0.6,
+        stagger: 0.1,
+        ease: "back.out(1.2)"
+      });
+
+      updateCables();
+
+      // Kırmızı Klips
+      Draggable.create("#clip-red", {
+        type: "x,y",
+        cursor: "grab",
+        activeCursor: "grabbing",
+        onPress: function() {
+          if(state.reactionActive) return;
+          targetSpoonHint.classList.add("active-hint");
+          targetSilverHint.classList.add("active-hint");
+        },
+        onDrag: function() {
+          updateCables();
+        },
+        onRelease: function() {
+          targetSpoonHint.classList.remove("active-hint");
+          targetSilverHint.classList.remove("active-hint");
+          handleClipMagneticSnap(this, "red");
+        }
+      });
+
+      // Siyah Klips
+      Draggable.create("#clip-black", {
+        type: "x,y",
+        cursor: "grab",
+        activeCursor: "grabbing",
+        onPress: function() {
+          if(state.reactionActive) return;
+          targetSpoonHint.classList.add("active-hint");
+          targetSilverHint.classList.add("active-hint");
+        },
+        onDrag: function() {
+          updateCables();
+        },
+        onRelease: function() {
+          targetSpoonHint.classList.remove("active-hint");
+          targetSilverHint.classList.remove("active-hint");
+          handleClipMagneticSnap(this, "black");
+        }
+      });
+    }
+
+    function handleClipMagneticSnap(draggableInstance, color) {
+      if(state.reactionActive) return;
+      const clipEl = draggableInstance.target;
+      const clipRect = clipEl.getBoundingClientRect();
+
+      const tipX = clipRect.left + clipRect.width / 2;
+      const tipY = clipRect.bottom - 4;
+
+      const bRect = beakerEl.getBoundingClientRect();
+
+      const spoonTarget = {
+        x: bRect.left + 68,
+        y: bRect.top + 8
+      };
+
+      const silverTarget = {
+        x: bRect.left + 146,
+        y: bRect.top + 36
+      };
+
+      const distToSpoon = Math.hypot(tipX - spoonTarget.x, tipY - spoonTarget.y);
+      const distToSilver = Math.hypot(tipX - silverTarget.x, tipY - silverTarget.y);
+
+      const SNAP_RADIUS = 95;
+
+      if (distToSpoon < SNAP_RADIUS && distToSpoon <= distToSilver) {
+        state.clipConnections[color] = "spoon";
+        const deltaX = spoonTarget.x - tipX;
+        const deltaY = spoonTarget.y - tipY;
+
+        gsap.to(clipEl, {
+          x: draggableInstance.x + deltaX,
+          y: draggableInstance.y + deltaY,
+          duration: 0.22,
+          ease: "power2.out",
+          onUpdate: updateCables
+        });
+
+      } else if (distToSilver < SNAP_RADIUS) {
+        state.clipConnections[color] = "silver";
+        const deltaX = silverTarget.x - tipX;
+        const deltaY = silverTarget.y - tipY;
+
+        gsap.to(clipEl, {
+          x: draggableInstance.x + deltaX,
+          y: draggableInstance.y + deltaY,
+          duration: 0.22,
+          ease: "power2.out",
+          onUpdate: updateCables
+        });
+
+      } else {
+        state.clipConnections[color] = null;
+        gsap.to(clipEl, {
+          x: wireState[color].homeX,
+          y: wireState[color].homeY,
+          duration: 0.5,
+          ease: "back.out(1.6)",
+          onUpdate: updateCables
+        });
+      }
+
+      checkCircuitState();
+    }
+
+    // --- DEVRE KONTROLÜ VE ELEKTROLİZ / AŞINMA DÖNGÜSÜ ---
+    function checkCircuitState() {
+      const redTarget = state.clipConnections.red;
+      const blackTarget = state.clipConnections.black;
+
+      if (redTarget && blackTarget) {
+
+        // DOĞRU BAĞLANTI: Siyah Kaşık (-), Kırmızı Gümüş (+)
+        if (blackTarget === "spoon" && redTarget === "silver") {
+          showStatusBanner("success", "Harika. Sistem hazır!");
+          
+          gsap.delayedCall(1.0, () => {
+            voltageDisplay.textContent = "-1.239 V";
+          });
+
+          // 2 saniye sonra zoom ve elektroliz başlasın
+          gsap.delayedCall(2.0, () => {
+            lockClipsToBeakerChamber(); // Klipsleri beherin içine kilitler
+            startCorrectElectrolysis();
+          });
+
+        // TERS BAĞLANTI: Kırmızı Kaşık (+), Siyah Gümüş (-)
+        } else if (redTarget === "spoon" && blackTarget === "silver") {
+          voltageDisplay.textContent = "1.239 V";
+          showStatusBanner("danger", "Dikkat! Kaşığı eritiyorsun, bağlantıyı ters çevir!");
+
+          gsap.delayedCall(1.0, () => {
+            triggerWrongConnectionErosion();
+          });
+
+        } else if (redTarget === blackTarget) {
+          showWarning("İki kabloyu aynı metale bağlayamazsın!");
+          voltageDisplay.textContent = "0.0 V";
+        }
+
+      } else {
+        voltageDisplay.textContent = "0.0 V";
+      }
+    }
+
+    // Klipsleri beherin yerel uzayına sabitleme (Zoomda eşyalarla birlikte büyümesi ve asla kopmaması için)
+    function lockClipsToBeakerChamber() {
+      const clipRed = document.getElementById("clip-red");
+      const clipBlack = document.getElementById("clip-black");
+
+      Draggable.get("#clip-red").disable();
+      Draggable.get("#clip-black").disable();
+
+      const bRect = beakerEl.getBoundingClientRect();
+
+      // Siyah klips kaşıkta (yerel: left: 55, top: -14)
+      beakerEl.appendChild(clipBlack);
+      gsap.set(clipBlack, { position: "absolute", left: 55, top: -14, x: 0, y: 0, zIndex: 65 });
+
+      // Kırmızı klips levhada (yerel: left: 133, top: 14)
+      beakerEl.appendChild(clipRed);
+      gsap.set(clipRed, { position: "absolute", left: 133, top: 14, x: 0, y: 0, zIndex: 65 });
+    }
+
+    // TERS BAĞLANTI DURUMUNDA KAŞIK AŞINMASI (YAVAŞLATILMIŞ - 5.5 Saniye)
+    function triggerWrongConnectionErosion() {
+      const spoonMesh = document.getElementById("spoon-mesh");
+      const spoonHandle = document.getElementById("spoon-handle");
+      const spoonBowl = document.getElementById("spoon-bowl");
+
+      gsap.to(spoonMesh, {
+        scale: 0.84,
+        duration: 5.5,
+        ease: "power1.out"
+      });
+
+      gsap.to([spoonHandle, spoonBowl], {
+        fill: "#17181c",
+        duration: 5.0,
+        ease: "power1.out"
+      });
+    }
+
+    // DOĞRU ELEKTROLİZ TEPKİMESİ (BOZULMASIZ SADECE ZOOM EFEKTİ)
+    function startCorrectElectrolysis() {
+      state.reactionActive = true;
+
+      const silverMesh = document.getElementById("silver-mesh");
+
+      // 1. Gümüş Levha 5 saniyede aşınır, pürüzlenir ve incelir
+      gsap.to(silverMesh, {
+        scaleX: 0.72,
+        scaleY: 0.82,
+        filter: "url(#corrosionFilter)",
+        duration: 5.0,
+        ease: "power1.inOut"
+      });
+
+      gsap.to("#turbNode", {
+        attr: { baseFrequency: 0.14 },
+        duration: 5.0
+      });
+      gsap.to("#dispNode", {
+        attr: { scale: 8 },
+        duration: 5.0
+      });
+
+      // 2. Kaşık 5 saniyede mat demirden parlak gümüş rengine döner
+      gsap.to("#ironStop1", { stopColor: "#ffffff", duration: 5.0 });
+      gsap.to("#ironStop2", { stopColor: "#f1f5f9", duration: 5.0 });
+      gsap.to("#ironStop3", { stopColor: "#cbd5e1", duration: 5.0 });
+      gsap.to("#ironStop4", { stopColor: "#94a3b8", duration: 5.0 });
+
+      gsap.to("#bowlStop1", { stopColor: "#cbd5e1", duration: 5.0 });
+      gsap.to("#bowlStop2", { stopColor: "#e2e8f0", duration: 5.0 });
+      gsap.to("#bowlStop3", { stopColor: "#ffffff", duration: 5.0 });
+      gsap.to("#bowlStop4", { stopColor: "#94a3b8", duration: 5.0 });
+
+      gsap.to("#spoon-highlight", {
+        stroke: "#ffffff",
+        strokeWidth: 2.2,
+        opacity: 1,
+        duration: 5.0
+      });
+
+      // 3. BOZULMASIZ SADECE ZOOM EFEKTİ (Klipsler beherle birlikte büyür, kablo uçları milimetrik güncellenir)
+      gsap.to("#center-setup-zone", {
+        scale: 1.55,
+        y: -15,
+        duration: 2.4,
+        ease: "power2.inOut",
+        onUpdate: updateCables
+      });
+
+      gsap.delayedCall(5.2, () => {
+        startMicroscopicReaction();
+      });
+    }
+
+    // MİKROSKOBİK REAKSİYON BİLGİLENDİRMESİ VE İYON GÖÇÜ
+    function startMicroscopicReaction() {
+      const box = document.getElementById("instruction-box");
+      const title = document.getElementById("instruction-title");
+      const text = document.getElementById("instruction-text");
+
+      title.textContent = "MİKROSKOBİK BOYUT: ELEKTRON VE İYON GÖÇÜ";
+      title.style.color = "#38bdf8";
+      text.innerHTML = "Gümüş levhadan ($Ag$) ayrılan atomlar, birer <strong>elektron ($e^-$)</strong> bırakarak <strong>$Ag^+$ iyonu</strong> olarak sıvıya geçer. Sıvıdan kaşığa göç eden $Ag^+$ iyonları, katottaki elektronu alarak kaşık yüzeyine nötr gümüş olarak kaplanır!";
+
+      gsap.to(box, {
+        autoAlpha: 1,
+        y: 0,
+        borderColor: "rgba(56, 189, 248, 0.6)",
+        boxShadow: "0 20px 40px rgba(0, 0, 0, 0.8), 0 0 25px rgba(56, 189, 248, 0.2)"
+      });
+
+      startIonParticles();
+    }
+
+    // Gümüş Levhadan Kopan Ag -> Ag+ ve Elektron (e-) Parçacık Döngüsü
+    function startIonParticles() {
+      const microSvg = document.getElementById("micro-layer");
+      let count = 0;
+
+      const particleInterval = setInterval(() => {
+        if (count >= 14) {
+          clearInterval(particleInterval);
+          return;
+        }
+        createSilverIonCycle(microSvg, count);
+        count++;
+      }, 550);
+    }
+
+    function createSilverIonCycle(container, index) {
+      const startX = 145 + (Math.random() * 8 - 4);
+      const startY = 85 + (Math.random() * 45);
+
+      const endX = 85 + (Math.random() * 6 - 3);
+      const endY = 80 + (Math.random() * 50);
+
+      const atomGroup = document.createElementNS("http://www.w3.org/2000/svg", "g");
+
+      const ionCircle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+      ionCircle.setAttribute("cx", 0);
+      ionCircle.setAttribute("cy", 0);
+      ionCircle.setAttribute("r", 5.5);
+      ionCircle.setAttribute("fill", "url(#silverTopThin)");
+      ionCircle.setAttribute("stroke", "#ffffff");
+      ionCircle.setAttribute("stroke-width", "1.2");
+      ionCircle.setAttribute("filter", "drop-shadow(0 0 3px rgba(255,255,255,0.9))");
+
+      const ionText = document.createElementNS("http://www.w3.org/2000/svg", "text");
+      ionText.setAttribute("x", 0);
+      ionText.setAttribute("y", 2.5);
+      ionText.setAttribute("font-size", "5.5");
+      ionText.setAttribute("font-weight", "900");
+      ionText.setAttribute("fill", "#0f172a");
+      ionText.setAttribute("text-anchor", "middle");
+      ionText.textContent = "Ag";
+
+      atomGroup.appendChild(ionCircle);
+      atomGroup.appendChild(ionText);
+      container.appendChild(atomGroup);
+
+      gsap.set(atomGroup, { x: startX, y: startY, scale: 0, opacity: 0 });
+
+      // Atom belirmesi
+      gsap.to(atomGroup, {
+        scale: 1,
+        opacity: 1,
+        duration: 0.4,
+        ease: "back.out(2)",
+        onComplete: () => {
+          // 2. Levha yüzeyinde Elektron (e-) Fırlatılması
+          const electron = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+          electron.setAttribute("cx", startX);
+          electron.setAttribute("cy", startY);
+          electron.setAttribute("r", 2.2);
+          electron.setAttribute("fill", "#facc15");
+          electron.setAttribute("filter", "drop-shadow(0 0 4px #facc15)");
+          container.appendChild(electron);
+
+          gsap.to(electron, {
+            x: startX + 18,
+            y: startY - 14,
+            opacity: 0,
+            scale: 0.3,
+            duration: 0.6,
+            ease: "power1.out",
+            onComplete: () => electron.remove()
+          });
+
+          // Atom artı yüklü gümüş iyonuna (Ag+) dönüşür
+          ionCircle.setAttribute("stroke", "#38bdf8");
+          ionCircle.setAttribute("stroke-width", "1.5");
+          ionText.textContent = "+";
+          ionText.setAttribute("fill", "#0284c7");
+          ionText.setAttribute("font-size", "7.5");
+
+          // 3. Ag+ İyonunun Çözelti İçinde Kaşığa Doğru Göçü
+          const midX = (startX + endX) / 2 + (Math.random() * 16 - 8);
+          const midY = (startY + endY) / 2 + (Math.random() * 16 - 8);
+
+          gsap.to(atomGroup, {
+            duration: 2.8,
+            ease: "power1.inOut",
+            motionPath: {
+              path: [
+                { x: startX, y: startY },
+                { x: midX, y: midY },
+                { x: endX, y: endY }
+              ]
+            },
+            onComplete: () => {
+              // 4. Kaşığa varış: Kaşıktan elektron alıp nötr Ag olarak yüzeye yapışır
+              const receiveElectron = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+              receiveElectron.setAttribute("cx", endX - 10);
+              receiveElectron.setAttribute("cy", endY);
+              receiveElectron.setAttribute("r", 2);
+              receiveElectron.setAttribute("fill", "#facc15");
+              container.appendChild(receiveElectron);
+
+              gsap.to(receiveElectron, {
+                x: endX,
+                opacity: 0,
+                duration: 0.3,
+                onComplete: () => {
+                  receiveElectron.remove();
+                  ionCircle.setAttribute("stroke", "#ffffff");
+                  ionText.textContent = "Ag";
+                  ionText.setAttribute("fill", "#0f172a");
+                  ionText.setAttribute("font-size", "5.5");
+
+                  gsap.to(atomGroup, {
+                    scale: 0.8,
+                    filter: "drop-shadow(0 0 6px #ffffff)",
+                    duration: 0.4
+                  });
+                }
+              });
+            }
+          });
+        }
+      });
+    }
+
+    // Bezier Kablo Çizimi (Zoom esnasında milimetrik hesaplama)
+    function updateCables() {
+      const clipRed = document.getElementById("clip-red");
+      const clipBlack = document.getElementById("clip-black");
+
+      if (clipRed.style.display !== "block") return;
+
+      const rRect = clipRed.getBoundingClientRect();
+      const bRect = clipBlack.getBoundingClientRect();
+
+      const redTipX = rRect.left + rRect.width / 2;
+      const redTipY = rRect.top + 2;
+
+      const blackTipX = bRect.left + bRect.width / 2;
+      const blackTipY = bRect.top + 2;
+
+      const psu = document.getElementById("power-supply");
+      const psuRect = psu.getBoundingClientRect();
+      const startRedX = psuRect.left + (psuRect.width * (135 / 250));
+      const startRedY = psuRect.top + (psuRect.height * (151 / 185));
+      const startBlackX = psuRect.left + (psuRect.width * (190 / 250));
+      const startBlackY = psuRect.top + (psuRect.height * (151 / 185));
+
+      const midRedX = (startRedX + redTipX) / 2 + 10;
+      const midRedY = Math.max(startRedY, redTipY) + 35;
+      const pathRed = `M ${startRedX} ${startRedY} Q ${midRedX} ${midRedY} ${redTipX} ${redTipY}`;
+      document.getElementById("wire-red").setAttribute("d", pathRed);
+
+      const midBlackX = (startBlackX + blackTipX) / 2 + 15;
+      const midBlackY = Math.max(startBlackY, blackTipY) + 40;
+      const pathBlack = `M ${startBlackX} ${startBlackY} Q ${midBlackX} ${midBlackY} ${blackTipX} ${blackTipY}`;
+      document.getElementById("wire-black").setAttribute("d", pathBlack);
+    }
+
+    window.addEventListener("resize", () => {
+      if (state.step >= 2) {
+        updateCables();
+      }
+    });
+
+    window.addEventListener("DOMContentLoaded", () => {
+      const allEquipments = [
+        ".workpiece-zone .item-wrapper",
+        ".center-setup-zone .beaker-unit",
+        ".center-setup-zone .power-supply-unit",
+        ".anode-zone .anode-slot"
+      ];
+
+      const tl = gsap.timeline();
+
+      tl.from(allEquipments, {
+        opacity: 0,
+        y: 35,
+        duration: 0.8,
+        stagger: 0.08,
+        ease: "power3.out"
+      })
+      .to({}, { duration: 3.0 })
+      .call(() => {
+        gsap.to("#instruction-box", {
+          autoAlpha: 1,
+          y: 0,
+          duration: 0.7,
+          ease: "back.out(1.4)"
+        });
+
+        state.isInteractionReady = true;
+        document.getElementById("item-spoon").classList.add("highlight-target");
+        document.getElementById("item-silver").classList.add("highlight-target");
+      });
+    });
+  </script>
+</body>
+</html>
